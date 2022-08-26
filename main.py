@@ -19,7 +19,7 @@ dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Прод�
 searching = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Остановить поиск'))
 
 
-ADMIN = [235519518]
+ADMIN = [235519518, 5161665132]
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token="1682322424:AAE30aCB0ZY7hH6P7-CtKqGBay34ZN9mPiY")
