@@ -18,6 +18,10 @@ dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Прод�
 
 searching = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Остановить поиск'))
 
+ready = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('✅Готово'))
+
+start = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('🤟Стартуем'))
+
 
 ADMIN = [235519518, 5161665132]
 
@@ -52,10 +56,10 @@ async def add_bot(message: types.Message):
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands="channel")
 async def add_channel(message: types.Message):
     msg = message.text.split(' ')
-    if len(msg) < 2 or msg[1][0] != '@':
-        await message.answer('Используйте эту команду правильно: /channel @channel')
+    if len(msg) < 3 or msg[2][0] != '-' or not msg[2][1:].isdigit():
+        await message.answer('Используйте эту команду правильно: /channel channel_link channel_id')
         return
-    await Channels.create(channel=msg[1])
+    await Channels.create(link=msg[1], channel=int(msg[2]))
     await message.answer("Успешно создана")
 
 
@@ -73,8 +77,8 @@ async def all_channels(message: types.Message):
     text = 'Вот каналы:\n'
     channels = await Channels.get_all()
     for i in channels:
-        text += i.channel+'\n'
-    await message.answer(text)
+        text += i.link+'\n'
+    await message.answer(text, disable_web_page_preview=True)
 
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands="del_bot")
 async def delete_bot(message: types.Message):
@@ -93,38 +97,73 @@ async def delete_bot(message: types.Message):
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands="del_channel")
 async def delete_channel(message: types.Message):
     msg = message.text.split(' ')
-    if len(msg) < 2 or msg[1][0] != '@':
-        await message.answer("Используйте эту команду правильно: /del_channel @channel")
+    if len(msg) < 2:
+        await message.answer("Используйте эту команду правильно: /del_channel channel_link")
         return
-    channel = await Channels.get_channel(channel=msg[1])
+    channel = await Channels.get_channel(link=msg[1])
     if channel is None:
         await message.answer("Канал не найден")
         return
-    await Channels.delete_channel(channel=msg[1])
+    await Channels.delete_channel(link=msg[1])
     await message.answer("Успешно удалено")
 
 @dp.message_handler(commands="start")
+@dp.message_handler(text='🤟Стартуем')
 async def menu(message: types.Message):
+    if message.text == '🤟Стартуем':
+        text = 'Нажми Старт в этих ботах, и мы начинаем:\n'
+        bots = await Bots.get_all()
+        to_start = []
+        for i in bots:
+            bot2 = Bot(token=i.bot)
+            try:
+                await bot2.send_chat_action(message.from_user.id, 'typing')
+            except Exception as e:
+                print(e)
+                username = (await bot2.get_me()).username
+                to_start.append('@'+username)
+            sess = await bot2.get_session()
+            await sess.close()
+        if len(to_start) > 0:
+            for i in to_start:
+                text += i+'\n'
+            await message.answer(text, reply_markup=start)
+            return
+        else:
+            pass
     user = await Users.get(user=message.from_user.id)
     print(user)
     if user is None:
         await Users.create(user=message.from_user.id)
     await message.answer("🫂Для поиска собеседника напишите /search, или используйте кнопки", reply_markup=menus)
 
- 
-@dp.message_handler(commands="search")
-@dp.message_handler(text='Начать поиск')
-async def search_user_act(message: types.Message):
+
+@dp.message_handler(text='✅Готово')
+async def check_bots(message: types.Message, text=''):
     bots = await Bots.get_all()
-    channels = await Channels.get_all()
-    to_sub = []
     to_start = []
+    if message.text == '✅Готово':
+        channels = await Channels.get_all()
+        to_sub = []
+        text2 = '🥺Для начала поиска, подпишись на каналы моих спонсоров:\n'
+        for i in channels:
+            user = await bot.get_chat_member(i.channel, message.from_user.id)
+            if user.status == 'left' or user.status == 'banned':
+                to_sub.append(i.link)
+        
+        if len(to_sub) > 0:
+            for i in to_sub:
+                text2 += i+'\n'
+            await message.answer(text2, reply_markup=ready, disable_web_page_preview=True)
+            return
+        else:
+            text += "😉Супер, спасибо! А теперь, предстоит ещё один шаг! "
+    text += 'Нажми Старт в этих ботах, и мы начинаем:\n'
 
     for i in bots:
         bot2 = Bot(token=i.bot)
         try:
             await bot2.send_chat_action(message.from_user.id, 'typing')
-            #await bot2.session.close()
         except Exception as e:
             print(e)
             username = (await bot2.get_me()).username
@@ -132,26 +171,62 @@ async def search_user_act(message: types.Message):
         sess = await bot2.get_session()
         await sess.close()
     
+        
+    if len(to_start) > 0:
+        for i in to_start:
+            text += i+'\n'
+    else:
+        await menu(message)
+        return
+        
+    await message.answer(text, reply_markup=start)
+
+
+async def check_channels(message: types.Message):
+    channels = await Channels.get_all()
+    to_sub = []
+    text = '🥺Для начала поиска, подпишись на каналы моих спонсоров:\n'
+    
     for i in channels:
         user = await bot.get_chat_member(i.channel, message.from_user.id)
         if user.status == 'left' or user.status == 'banned':
-            to_sub.append(i.channel)
-    
-    if len(to_sub) > 0 or len(to_start) > 0:
-        text = ''
+            to_sub.append(i.link)
         
-        if len(to_sub) > 0:
-            text += 'Вы должны подписаться на некоторые каналы:\n'
-            for i in to_sub:
-                text += i+'\n'
-        
-        if len(to_start) > 0:
-            text += 'Вы должны запустить несколько ботов:\n'
-            for i in to_start:
-                text += i+'\n'
-        
-        await message.answer(text)
+    if len(to_sub) > 0:
+        for i in to_sub:
+            text += i+'\n'
+    else:
+        await check_bots(message)
         return
+        
+    await message.answer(text, reply_markup=ready, disable_web_page_preview=True)
+
+
+@dp.message_handler(commands="search")
+@dp.message_handler(text=['Начать поиск'])
+async def search_user_act(message: types.Message):
+    bots = await Bots.get_all()
+    channels = await Channels.get_all()
+    for i in channels:
+        user = await bot.get_chat_member(i.channel, message.from_user.id)
+        if user.status == 'left' or user.status == 'banned':
+            await check_channels(message)
+            return
+    
+    for i in bots:
+        not_sub = False
+        bot2 = Bot(token=i.bot)
+        try:
+            await bot2.send_chat_action(message.from_user.id, 'typing')
+        except Exception as e:
+            print(e)
+            not_sub = True
+        sess = await bot2.get_session()
+        await sess.close()
+        if not_sub:
+            await check_bots(message)
+            return
+    
     if message.chat.type == "private":
         chatting = await db.get_user(chat=True, user=message.from_user.id)
         print(chatting)
@@ -228,7 +303,7 @@ async def leave_from_chat_act(message: types.Message):
         await db.delete_chat(user=message.from_user.id)
         await db.delete_chat(user=user.interlocutor)
         await bot.send_message(text="😔Пользователь решил покинуть диалог...\n\n💡Продолжим поиск нового собеседника?", chat_id=user.interlocutor, reply_markup=menus)
-        await message.answer("🚶‍♂️Вы покинули диалог\n\n💡Продолжим поиски нового собеседника?")
+        await message.answer("🚶‍♂️Вы покинули диалог\n\n💡Продолжим поиски нового собеседника?", reply_markup=menus)
     else:
         await message.answer("🧐Не обнаружил чат с собеседником")
  

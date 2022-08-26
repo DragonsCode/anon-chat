@@ -17,8 +17,8 @@ class ModelAdmin:
         await async_db_session.commit()
     
     @classmethod
-    async def delete_channel(cls, channel):
-        user = await cls.get_channel(channel=channel)
+    async def delete_channel(cls, link):
+        user = await cls.get_channel(link=link)
         await async_db_session.delete(user)
         await async_db_session.commit()
     
@@ -56,8 +56,8 @@ class ModelAdmin:
         return result
     
     @classmethod
-    async def get_channel(cls, channel: str):
-        query = select(cls).where(cls.channel == channel)
+    async def get_channel(cls, link: str):
+        query = select(cls).where(cls.link == link)
         results = await async_db_session.execute(query)
         result = results.scalars().first()
         return result

@@ -7,7 +7,8 @@ from models.database import Base
 class Channels(Base, ModelAdmin):
     __tablename__ = "channel"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    channel = Column(String(100))
+    link = Column(String(100))
+    channel = Column(Integer)
 
     def __str__(self):
         return f'{self.channel}'

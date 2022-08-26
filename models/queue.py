@@ -5,9 +5,6 @@ from models.database import Base
 
 
 class Queue(Base, ModelAdmin):
-    def __init__(self, user: int):
-        self.user = user
-        super(Queue, self).__init__()
     __tablename__ = "queue"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user = Column(Integer)
