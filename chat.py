@@ -1,6 +1,10 @@
+from email.message import Message
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.dispatcher.filters import IDFilter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
 
 from models.db_api import methods as db
 from models.database import async_db_session
@@ -26,19 +30,40 @@ start = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('🤟Ста
 ADMIN = [235519518, 5161665132]
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="5702778958:AAEzOO9p0BIeAKDBlUeXLHwSMqnBaN_Wiu4")
-dp = Dispatcher(bot)
+bot = Bot(token="1682322424:AAE30aCB0ZY7hH6P7-CtKqGBay34ZN9mPiY")
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
+
+class Form(StatesGroup):
+    post = State()
 
 
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands="pub")
 async def pub(message: types.Message):
-    msg = message.text[4:]
+    await message.answer('Send the post')
+    await Form.post.set()
+
+
+@dp.message_handler(state=Form.post, content_types=['photo', 'text'])
+async def post(message: types.Message, state: FSMContext):
+    arg = message.html_text.split('\n|button: ')
+    msg = arg[0]
+    markup = None
     if len(msg) < 5:
         await message.answer('Слишком короткий')
         return
+    if len(arg) > 1:
+        markup = InlineKeyboardMarkup()
+        for i in arg[1:]:
+            i = i.split("'")
+            markup.add(InlineKeyboardButton(i[0], i[1]))
     users = await Users.get_all()
+    await state.finish()
     for i in users:
-        await bot.send_message(i.user, msg)
+        if message.content_type == 'photo':
+            await bot.send_photo(i.user, message.photo[len(message.photo) - 1].file_id, caption=msg, reply_markup=markup)
+        else:
+            await bot.send_message(i.user, msg, reply_markup=markup)
         await asyncio.sleep(0.4)
     await message.answer("Успешно отправлено")
 
