@@ -26,7 +26,7 @@ start = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('🤟Ста
 ADMIN = [235519518, 5161665132]
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="1682322424:AAE30aCB0ZY7hH6P7-CtKqGBay34ZN9mPiY")
+bot = Bot(token="5702778958:AAEzOO9p0BIeAKDBlUeXLHwSMqnBaN_Wiu4")
 dp = Dispatcher(bot)
 
 
