@@ -32,7 +32,7 @@ start = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('🤟Ста
 ADMIN = [235519518, 5161665132]
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="5702778958:AAEzOO9p0BIeAKDBlUeXLHwSMqnBaN_Wiu4")
+bot = Bot(token="token")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
