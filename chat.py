@@ -16,6 +16,8 @@ import logging
 
 import asyncio
 
+import csv
+
 menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск'))
 
 dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Продолжить поиск')).add(KeyboardButton('Покинуть чат'))
@@ -36,6 +38,24 @@ dp = Dispatcher(bot, storage=storage)
 
 class Form(StatesGroup):
     post = State()
+
+
+@dp.message_handler(IDFilter(chat_id=ADMIN), commands='stats')
+async def stats(message: types.Message):
+    outfile = open('users.csv', 'w', encoding='utf-8')
+    outcsv = csv.writer(outfile)
+    users = await Users.get_all()
+    outcsv.writerow(['id', 'user_id', 'user_name', 'first_name', 'last_name'])
+    data = []
+    for i in users:
+        try:
+            chat = await bot.get_chat(i.user)
+            data.append([i.id, i.user, chat.username, chat.first_name, chat.last_name])
+        except Exception as e:
+            print(e)
+    outcsv.writerows(data)
+    outfile.close()
+    await message.answer_document(('users.csv', open('users.csv', 'rb')))
 
 
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands="pub")
