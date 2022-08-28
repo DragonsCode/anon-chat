@@ -42,6 +42,7 @@ class Form(StatesGroup):
 
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands='stats')
 async def stats(message: types.Message):
+    await message.answer('Collecting stats, please wait...')
     outfile = open('users.csv', 'w', encoding='utf-8')
     outcsv = csv.writer(outfile)
     users = await Users.get_all()
