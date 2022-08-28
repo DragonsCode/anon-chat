@@ -61,9 +61,15 @@ async def post(message: types.Message, state: FSMContext):
     await state.finish()
     for i in users:
         if message.content_type == 'photo':
-            await bot.send_photo(i.user, message.photo[len(message.photo) - 1].file_id, caption=msg, reply_markup=markup)
+            try:
+                await bot.send_photo(i.user, message.photo[len(message.photo) - 1].file_id, caption=msg, reply_markup=markup)
+            except Exception as e:
+                print(e)
         else:
-            await bot.send_message(i.user, msg, reply_markup=markup)
+            try:
+                await bot.send_message(i.user, msg, reply_markup=markup)
+            except Exception as e:
+                print(e)
         await asyncio.sleep(0.4)
     await message.answer("Успешно отправлено")
 
