@@ -8,7 +8,12 @@ class ModelAdmin:
     @classmethod
     async def create(cls, **kwargs):
         async_db_session.add(cls(**kwargs))
-        await async_db_session.commit()
+        try:
+            await async_db_session.commit()
+        except Exception as e:
+            print(e)
+            await async_db_session.rollback()
+            await async_db_session.commit()
     
     @classmethod
     async def delete(cls, user):
@@ -51,7 +56,13 @@ class ModelAdmin:
             query = select(cls).where(cls.interlocutor == interlocutor)
         else:
             query = select(cls)
-        results = await async_db_session.execute(query)
+        results = None
+        try:
+            results = await async_db_session.execute(query)
+        except Exception as e:
+            print(e)
+            await async_db_session.rollback()
+            results = await async_db_session.execute(query)
         result = results.scalars().first()
         return result
     
