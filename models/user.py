@@ -1,3 +1,4 @@
+from email.policy import default
 from sqlalchemy import Column, Integer
 
 from models.model_admin import ModelAdmin
@@ -8,6 +9,7 @@ class Users(Base, ModelAdmin):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user = Column(Integer)
+    referals = Column(Integer, default=0)
 
     def __str__(self):
         return f'{self.user}'

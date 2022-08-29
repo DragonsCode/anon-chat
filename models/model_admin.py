@@ -42,7 +42,11 @@ class ModelAdmin:
             .execution_options(synchronize_session="fetch")
         )
 
-        await async_db_session.execute(query)
+        try:
+            await async_db_session.execute(query)
+        except:
+            await async_db_session.rollback()
+            await async_db_session.execute(query)
         await async_db_session.commit()
 
     @classmethod
