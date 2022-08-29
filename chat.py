@@ -1,10 +1,10 @@
-from email.message import Message
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.dispatcher.filters import IDFilter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
+from aiogram.utils.deep_linking import get_start_link
 
 from models.db_api import methods as db
 from models.database import async_db_session
@@ -18,7 +18,7 @@ import asyncio
 
 import csv
 
-menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск'))
+menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск')).add(KeyboardButton('🫂Партнерка'))
 
 dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Продолжить поиск')).add(KeyboardButton('Покинуть чат'))
 
@@ -32,7 +32,7 @@ start = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('🤟Ста
 ADMIN = [235519518, 5161665132]
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="5702778958:AAEzOO9p0BIeAKDBlUeXLHwSMqnBaN_Wiu4")
+bot = Bot(token="1682322424:AAE30aCB0ZY7hH6P7-CtKqGBay34ZN9mPiY")
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
@@ -42,16 +42,15 @@ class Form(StatesGroup):
 
 @dp.message_handler(IDFilter(chat_id=ADMIN), commands='stats')
 async def stats(message: types.Message):
-    await message.answer('Collecting stats, please wait...')
     outfile = open('users.csv', 'w', encoding='utf-8')
     outcsv = csv.writer(outfile)
     users = await Users.get_all()
-    outcsv.writerow(['id', 'user_id', 'user_name', 'first_name', 'last_name'])
+    outcsv.writerow(['id', 'user_id', 'referals', 'user_name', 'first_name', 'last_name'])
     data = []
     for i in users:
         try:
             chat = await bot.get_chat(i.user)
-            data.append([i.id, i.user, chat.username, chat.first_name, chat.last_name])
+            data.append([i.id, i.user, i.referals, chat.username, chat.first_name, chat.last_name])
         except Exception as e:
             print(e)
     outcsv.writerows(data)
@@ -159,6 +158,14 @@ async def delete_channel(message: types.Message):
     await Channels.delete_channel(link=msg[1])
     await message.answer("Успешно удалено")
 
+
+@dp.message_handler(text='🫂Партнерка')
+async def ref(message: types.Message):
+    user = await Users.get(user=message.from_user.id)
+    link = await get_start_link(message.from_user.id)
+    await message.answer(f'💡Приглашайте друзей в анонимный чат, и веселитесь вместе!\n\n👥Вы пригласили: {user.referals}\n✅Ваша пригласительная ссылка: {link}')
+
+
 @dp.message_handler(commands="start")
 @dp.message_handler(text='🤟Стартуем')
 async def menu(message: types.Message):
@@ -183,10 +190,15 @@ async def menu(message: types.Message):
             return
         else:
             pass
+    args = message.get_args()
+    print('args: ', args)
     user = await Users.get(user=message.from_user.id)
-    print(user)
+
     if user is None:
         await Users.create(user=message.from_user.id)
+        if args is not None and args.isdigit() and int(args) != message.from_user.id:
+            ref = await Users.get(user=int(args))
+            await Users.updater(user=int(args), referals=ref.referals+1)
     await message.answer("🫂Для поиска собеседника напишите /search, или используйте кнопки", reply_markup=menus)
 
 
