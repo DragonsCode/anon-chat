@@ -18,7 +18,7 @@ import asyncio
 
 import csv
 
-menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск')).add(KeyboardButton('🫂Партнерка')).add(KeyboardButton('promo'))
+menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск')).add(KeyboardButton('🫂Партнерка')).add(KeyboardButton('🎁Промокод'))
 
 dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Продолжить поиск')).add(KeyboardButton('Покинуть чат'))
 
@@ -266,7 +266,7 @@ async def check_channels(message: types.Message):
     await message.answer(text, reply_markup=ready, disable_web_page_preview=True)
 
 
-@dp.message_handler(text=['promo'])
+@dp.message_handler(text=['🎁Промокод'])
 async def promo(message: types.Message):
     bots = await Bots.get_all()
     channels = await Channels.get_all()
@@ -290,7 +290,7 @@ async def promo(message: types.Message):
             await check_bots(message)
             return
     
-    await message.answer('your promo')
+    await message.answer('🎁Твой промокод для стикер-бота – anonchat')
 
 
 @dp.message_handler(commands="search")
