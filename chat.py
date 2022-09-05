@@ -18,7 +18,7 @@ import asyncio
 
 import csv
 
-menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск')).add(KeyboardButton('🫂Партнерка'))
+menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск')).add(KeyboardButton('🫂Партнерка')).add(KeyboardButton('promo'))
 
 dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Продолжить поиск')).add(KeyboardButton('Покинуть чат'))
 
@@ -264,6 +264,33 @@ async def check_channels(message: types.Message):
         return
         
     await message.answer(text, reply_markup=ready, disable_web_page_preview=True)
+
+
+@dp.message_handler(text=['promo'])
+async def promo(message: types.Message):
+    bots = await Bots.get_all()
+    channels = await Channels.get_all()
+    for i in channels:
+        user = await bot.get_chat_member(i.channel, message.from_user.id)
+        if user.status == 'left' or user.status == 'banned':
+            await check_channels(message)
+            return
+    
+    for i in bots:
+        not_sub = False
+        bot2 = Bot(token=i.bot)
+        try:
+            await bot2.send_chat_action(message.from_user.id, 'typing')
+        except Exception as e:
+            print(e)
+            not_sub = True
+        sess = await bot2.get_session()
+        await sess.close()
+        if not_sub:
+            await check_bots(message)
+            return
+    
+    await message.answer('your promo')
 
 
 @dp.message_handler(commands="search")
