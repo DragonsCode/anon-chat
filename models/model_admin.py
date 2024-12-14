@@ -18,6 +18,8 @@ class ModelAdmin:
     @classmethod
     async def delete(cls, user):
         user = await cls.get(user=user)
+        if not user:
+            return
         await async_db_session.delete(user)
         await async_db_session.commit()
     
@@ -35,6 +37,7 @@ class ModelAdmin:
 
     @classmethod
     async def updater(cls, user, **kwargs):
+        print(f"Updating {user}")
         query = (
             update(cls)
             .where(cls.user == user)
@@ -45,15 +48,17 @@ class ModelAdmin:
         try:
             await async_db_session.execute(query)
         except:
+            print("Rollback")
             await async_db_session.rollback()
             await async_db_session.execute(query)
         await async_db_session.commit()
+        print(f"Updated {user}")
 
     @classmethod
     async def get(cls, user: int=0, interlocutor: int=0):
         query = None
         if user and interlocutor:
-            query = select(cls).where(cls.user == user, interlocutor == interlocutor)
+            query = select(cls).where((cls.user == user) & (interlocutor == interlocutor))
         elif user:
             query = select(cls).where(cls.user == user)
         elif interlocutor:

@@ -13,7 +13,7 @@ class AsyncDatabaseSession:
         return getattr(self._session, name)
 
     async def init(self):
-        self._engine = create_async_engine("sqlite+aiosqlite:///ref.db",
+        self._engine = create_async_engine("sqlite+aiosqlite:///bot.db",
             pool_recycle=1800,
             pool_pre_ping=True,
             echo_pool=True

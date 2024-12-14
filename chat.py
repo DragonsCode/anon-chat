@@ -1,10 +1,15 @@
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.dispatcher.filters import IDFilter
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.utils.deep_linking import get_start_link
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import (
+    Message,
+    InlineKeyboardButton,
+    KeyboardButton,
+    FSInputFile,
+)
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.filters import Command, CommandObject
+from aiogram.filters.state import State, StatesGroup
 
 from models.db_api import methods as db
 from models.database import async_db_session
@@ -12,436 +17,388 @@ from models.bot import Bots
 from models.channel import Channels
 from models.user import Users
 
-import logging
-
 import asyncio
-
+import logging
 import csv
 
-menus = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Начать поиск')).add(KeyboardButton('🫂Партнерка')).add(KeyboardButton('🎁Промокод'))
-
-dating = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Продолжить поиск')).add(KeyboardButton('Покинуть чат'))
-
-searching = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('Остановить поиск'))
-
-ready = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('✅Готово'))
-
-start = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton('🤟Стартуем'))
-
+# Define Keyboards
+menus = (
+    ReplyKeyboardBuilder()
+    .add(KeyboardButton(text="Начать поиск"))
+    .add(KeyboardButton(text="🫂Партнерка"))
+    .add(KeyboardButton(text="🎁Промокод"))
+)
+dating = (
+    ReplyKeyboardBuilder()
+    .add(KeyboardButton(text="Продолжить поиск"))
+    .add(KeyboardButton(text="Покинуть чат"))
+)
+searching = ReplyKeyboardBuilder().add(KeyboardButton(text="Остановить поиск"))
+ready = ReplyKeyboardBuilder().add(KeyboardButton(text="✅Готово"))
+start = ReplyKeyboardBuilder().add(KeyboardButton(text="🤟Стартуем"))
 
 ADMIN = [235519518, 5161665132]
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
+
+# Initialize bot and storage
 bot = Bot(token="5702778958:AAEzOO9p0BIeAKDBlUeXLHwSMqnBaN_Wiu4")
 storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(storage=storage)
 
+# Define FSM States
 class Form(StatesGroup):
     post = State()
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands='stats')
-async def stats(message: types.Message):
-    outfile = open('users.csv', 'w', encoding='utf-8')
-    outcsv = csv.writer(outfile)
-    users = await Users.get_all()
-    outcsv.writerow(['id', 'user_id', 'referals', 'user_name', 'first_name', 'last_name'])
-    data = []
-    for i in users:
-        try:
-            chat = await bot.get_chat(i.user)
-            data.append([i.id, i.user, i.referals, chat.username, chat.first_name, chat.last_name])
-        except Exception as e:
-            print(e)
-    outcsv.writerows(data)
-    outfile.close()
-    await message.answer_document(('users.csv', open('users.csv', 'rb')))
+@dp.message(Command("stats"), F.from_user.id.in_(ADMIN))
+async def stats(message: Message):
+    with open("users.csv", "w", encoding="utf-8") as outfile:
+        writer = csv.writer(outfile)
+        writer.writerow(["id", "user_id", "referals", "user_name", "first_name", "last_name"])
+        users = await Users.get_all()
+        for user in users:
+            try:
+                chat = await bot.get_chat(user.user)
+                writer.writerow(
+                    [user.id, user.user, user.referals, chat.username, chat.first_name, chat.last_name]
+                )
+            except Exception as e:
+                logging.error(e)
+    await message.answer_document(FSInputFile("users.csv"))
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="pub")
-async def pub(message: types.Message):
-    await message.answer('Send the post')
-    await Form.post.set()
+@dp.message(Command("pub"), F.from_user.id.in_(ADMIN))
+async def pub(message: Message, state: FSMContext):
+    await message.answer("Send the post")
+    await state.set_state(Form.post)
 
 
-@dp.message_handler(state=Form.post, content_types=['photo', 'text'])
-async def post(message: types.Message, state: FSMContext):
-    arg = message.html_text.split('\n|button: ')
-    msg = arg[0]
+@dp.message(Form.post)
+async def post(message: Message, state: FSMContext):
+    args = message.html_text.split("\n|button: ")
+    text = args[0]
     markup = None
-    if len(msg) < 5:
-        await message.answer('Слишком короткий')
-        return
-    if len(arg) > 1:
-        markup = InlineKeyboardMarkup()
-        for i in arg[1:]:
-            i = i.split("'")
-            markup.add(InlineKeyboardButton(i[0], i[1]))
+    print(f"Got post: {text}")
+
+    if len(args) > 1:
+        markup = InlineKeyboardBuilder()
+        for button in args[1:]:
+            label, url = button.split("'")
+            markup.add(InlineKeyboardButton(text=label, url=url))
+
     users = await Users.get_all()
-    await state.finish()
-    for i in users:
-        if message.content_type == 'photo':
-            try:
-                await bot.send_photo(i.user, message.photo[len(message.photo) - 1].file_id, caption=msg, reply_markup=markup)
-            except Exception as e:
-                print(e)
-        else:
-            try:
-                await bot.send_message(i.user, msg, reply_markup=markup)
-            except Exception as e:
-                print(e)
+    await state.clear()
+
+    for user in users:
+        try:
+            if message.content_type == "photo":
+                await bot.send_photo(
+                    user.user, message.photo[-1].file_id, caption=text, reply_markup=markup.as_markup()
+                )
+            else:
+                await bot.send_message(user.user, text, reply_markup=markup.as_markup())
+        except Exception as e:
+            logging.error(f"{user.user}: {e}")
         await asyncio.sleep(0.4)
+
     await message.answer("Успешно отправлено")
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="bot")
-async def add_bot(message: types.Message):
-    msg = message.text.split(' ')
-    if len(msg) < 2:
-        await message.answer('Используйте эту команду правильно: /bot token')
+@dp.message(Command("bot"), F.from_user.id.in_(ADMIN))
+async def add_bot(message: Message):
+    tokens = message.text.split(" ")
+    if len(tokens) < 2:
+        await message.answer("Используйте эту команду правильно: /bot token")
         return
-    await Bots.create(bot=msg[1])
+    await Bots.create(bot=tokens[1])
     await message.answer("Успешно создана")
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="channel")
-async def add_channel(message: types.Message):
-    msg = message.text.split(' ')
-    if len(msg) < 3 or msg[2][0] != '-' or not msg[2][1:].isdigit():
-        await message.answer('Используйте эту команду правильно: /channel channel_link channel_id')
+@dp.message(Command("channel"), F.from_user.id.in_(ADMIN))
+async def add_channel(message: Message):
+    args = message.text.split(" ")
+    if len(args) < 3 or args[2][0] != "-" or not args[2][1:].isdigit():
+        await message.answer("Используйте эту команду правильно: /channel channel_link channel_id")
         return
-    await Channels.create(link=msg[1], channel=int(msg[2]))
+    await Channels.create(link=args[1], channel=int(args[2]))
     await message.answer("Успешно создана")
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="bots")
-async def all_bots(message: types.Message):
-    text = 'Вот токены ботов:\n'
+@dp.message(Command("bots"), F.from_user.id.in_(ADMIN))
+async def all_bots(message: Message):
     bots = await Bots.get_all()
-    for i in bots:
-        text += i.bot+'\n'
+    text = "Вот токены ботов:\n" + "\n".join(bot.bot for bot in bots)
     await message.answer(text)
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="channels")
-async def all_channels(message: types.Message):
-    text = 'Вот каналы:\n'
+@dp.message(Command("channels"), F.from_user.id.in_(ADMIN))
+async def all_channels(message: Message):
     channels = await Channels.get_all()
-    for i in channels:
-        text += i.link+'\n'
+    text = "Вот каналы:\n" + "\n".join(channel.link for channel in channels)
     await message.answer(text, disable_web_page_preview=True)
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="del_bot")
-async def delete_bot(message: types.Message):
-    msg = message.text.split(' ')
-    if len(msg) < 2:
+
+@dp.message(Command("del_bot"), F.from_user.id.in_(ADMIN))
+async def delete_bot(message: Message):
+    tokens = message.text.split(" ")
+    if len(tokens) < 2:
         await message.answer("Используйте эту команду правильно: /del_bot token")
         return
-    channel = await Bots.get_bot(bot=msg[1])
-    if channel is None:
+    bot_instance = await Bots.get_bot(bot=tokens[1])
+    if bot_instance is None:
         await message.answer("Токен не найден")
         return
-    await Bots.delete_bot(bot=msg[1])
+    await Bots.delete_bot(bot=tokens[1])
     await message.answer("Успешно удалено")
 
 
-@dp.message_handler(IDFilter(chat_id=ADMIN), commands="del_channel")
-async def delete_channel(message: types.Message):
-    msg = message.text.split(' ')
-    if len(msg) < 2:
+@dp.message(Command("del_channel"), F.from_user.id.in_(ADMIN))
+async def delete_channel(message: Message):
+    args = message.text.split(" ")
+    if len(args) < 2:
         await message.answer("Используйте эту команду правильно: /del_channel channel_link")
         return
-    channel = await Channels.get_channel(link=msg[1])
-    if channel is None:
+    channel_instance = await Channels.get_channel(link=args[1])
+    if channel_instance is None:
         await message.answer("Канал не найден")
         return
-    await Channels.delete_channel(link=msg[1])
+    await Channels.delete_channel(link=args[1])
     await message.answer("Успешно удалено")
 
 
-@dp.message_handler(text='🫂Партнерка')
-async def ref(message: types.Message):
+@dp.message(F.text == "🫂Партнерка")
+async def ref(message: Message):
     user = await Users.get(user=message.from_user.id)
-    link = await get_start_link(message.from_user.id)
-    await message.answer(f'💡Приглашайте друзей в анонимный чат, и веселитесь вместе!\n\n👥Вы пригласили: {user.referals}\n✅Ваша пригласительная ссылка: {link}')
+    link = f"https://t.me/anonchatlive_bot?start={message.from_user.id}"
+    await message.answer(
+        f"💡Приглашайте друзей в анонимный чат, и веселитесь вместе!\n\n👥Вы пригласили: {user.referals}\n✅Ваша пригласительная ссылка: {link}"
+    )
 
 
-@dp.message_handler(commands="start")
-@dp.message_handler(text='🤟Стартуем')
-async def menu(message: types.Message):
-    if message.text == '🤟Стартуем':
-        text = 'Нажми Старт в этих ботах, и мы начинаем:\n'
-        bots = await Bots.get_all()
-        to_start = []
-        for i in bots:
-            bot2 = Bot(token=i.bot)
-            try:
-                await bot2.send_chat_action(message.from_user.id, 'typing')
-            except Exception as e:
-                print(e)
-                username = (await bot2.get_me()).username
-                to_start.append('@'+username)
-            sess = await bot2.get_session()
-            await sess.close()
-        if len(to_start) > 0:
-            for i in to_start:
-                text += i+'\n'
-            await message.answer(text, reply_markup=start)
-            return
-        else:
-            pass
-    args = message.get_args()
-    print('args: ', args)
+@dp.message(Command("start"))
+@dp.message(F.text == "🤟Стартуем")
+async def menu(message: Message, command: CommandObject = None):
+    if command is not None:
+        args = command.args
+    else:
+        args = None
     user = await Users.get(user=message.from_user.id)
-
     if user is None:
         await Users.create(user=message.from_user.id)
-        if args is not None and args.isdigit() and int(args) != message.from_user.id:
+        if args and args.isdigit() and int(args) != message.from_user.id:
+            print(f"{message.from_user.id} -> {int(args)}")
             ref = await Users.get(user=int(args))
-            await Users.updater(user=int(args), referals=ref.referals+1)
-    await message.answer("🫂Для поиска собеседника напишите /search, или используйте кнопки", reply_markup=menus)
+            await Users.updater(int(args), referals=ref.referals + 1)
+    await message.answer("🫂Для поиска собеседника напишите /search, или используйте кнопки", reply_markup=menus.as_markup(resize_keyboard=True))
 
 
-@dp.message_handler(text='✅Готово')
-async def check_bots(message: types.Message, text=''):
+@dp.message(F.text == "✅Готово")
+async def check_bots(message: Message):
     bots = await Bots.get_all()
+    text = "Нажми Старт в этих ботах, и мы начинаем:\n"
     to_start = []
-    if message.text == '✅Готово':
-        channels = await Channels.get_all()
-        to_sub = []
-        text2 = '🥺Для начала поиска, подпишись на каналы моих спонсоров:\n'
-        for i in channels:
-            user = await bot.get_chat_member(i.channel, message.from_user.id)
-            if user.status == 'left' or user.status == 'banned':
-                to_sub.append(i.link)
-        
-        if len(to_sub) > 0:
-            for i in to_sub:
-                text2 += i+'\n'
-            await message.answer(text2, reply_markup=ready, disable_web_page_preview=True)
-            return
-        else:
-            text += "😉Супер, спасибо! А теперь, предстоит ещё один шаг! "
-    text += 'Нажми Старт в этих ботах, и мы начинаем:\n'
 
-    for i in bots:
-        bot2 = Bot(token=i.bot)
+    for bot_data in bots:
+        bot_instance = Bot(token=bot_data.bot)
         try:
-            await bot2.send_chat_action(message.from_user.id, 'typing')
+            await bot_instance.send_chat_action(message.from_user.id, "typing")
         except Exception as e:
-            print(e)
-            username = (await bot2.get_me()).username
-            to_start.append('@'+username)
-        sess = await bot2.get_session()
-        await sess.close()
-    
-        
-    if len(to_start) > 0:
-        for i in to_start:
-            text += i+'\n'
+            logging.error(e)
+            username = (await bot_instance.get_me()).username
+            to_start.append(f"@{username}")
+        await bot_instance.session.close()
+
+    if to_start:
+        text += "\n".join(to_start)
+        await message.answer(text, reply_markup=start.as_markup(resize_keyboard=True))
     else:
         await menu(message)
-        return
-        
-    await message.answer(text, reply_markup=start)
 
 
-async def check_channels(message: types.Message):
+async def check_channels(message: Message):
     channels = await Channels.get_all()
     to_sub = []
-    text = '🥺Для начала поиска, подпишись на каналы моих спонсоров:\n'
-    
-    for i in channels:
-        user = await bot.get_chat_member(i.channel, message.from_user.id)
-        if user.status == 'left' or user.status == 'banned':
-            to_sub.append(i.link)
-        
-    if len(to_sub) > 0:
-        for i in to_sub:
-            text += i+'\n'
+    text = "🥺Для начала поиска, подпишись на каналы моих спонсоров:\n"
+
+    for channel in channels:
+        user_status = await bot.get_chat_member(channel.channel, message.from_user.id)
+        if user_status.status in ["left", "banned"]:
+            to_sub.append(channel.link)
+
+    if to_sub:
+        text += "\n".join(to_sub)
+        await message.answer(text, reply_markup=ready.as_markup(resize_keyboard=True), disable_web_page_preview=True)
     else:
         await check_bots(message)
-        return
-        
-    await message.answer(text, reply_markup=ready, disable_web_page_preview=True)
 
 
-@dp.message_handler(text=['🎁Промокод'])
-async def promo(message: types.Message):
-    bots = await Bots.get_all()
+@dp.message(F.text == "🎁Промокод")
+async def promo(message: Message):
     channels = await Channels.get_all()
-    for i in channels:
-        user = await bot.get_chat_member(i.channel, message.from_user.id)
-        if user.status == 'left' or user.status == 'banned':
+    for channel in channels:
+        user_status = await bot.get_chat_member(channel.channel, message.from_user.id)
+        if user_status.status in ["left", "banned"]:
             await check_channels(message)
             return
-    
-    for i in bots:
-        not_sub = False
-        bot2 = Bot(token=i.bot)
+
+    bots = await Bots.get_all()
+    for bot_data in bots:
+        not_subscribed = False
+        bot_instance = Bot(token=bot_data.bot)
         try:
-            await bot2.send_chat_action(message.from_user.id, 'typing')
+            await bot_instance.send_chat_action(message.from_user.id, "typing")
         except Exception as e:
-            print(e)
-            not_sub = True
-        sess = await bot2.get_session()
-        await sess.close()
-        if not_sub:
+            logging.error(e)
+            not_subscribed = True
+        await bot_instance.session.close()
+
+        if not_subscribed:
             await check_bots(message)
             return
-    
-    await message.answer('🎁Твой промокод для стикер-бота – anonchat')
+
+    await message.answer("🎁Твой промокод для стикер-бота – anonchat")
 
 
-@dp.message_handler(commands="search")
-@dp.message_handler(text=['Начать поиск'])
-async def search_user_act(message: types.Message):
-    bots = await Bots.get_all()
+@dp.message(Command("search"))
+@dp.message(F.text == "Начать поиск")
+async def search_user_act(message: Message):
     channels = await Channels.get_all()
-    for i in channels:
-        user = await bot.get_chat_member(i.channel, message.from_user.id)
-        if user.status == 'left' or user.status == 'banned':
+    for channel in channels:
+        user_status = await bot.get_chat_member(channel.channel, message.from_user.id)
+        if user_status.status in ["left", "banned"]:
             await check_channels(message)
             return
-    
-    for i in bots:
-        not_sub = False
-        bot2 = Bot(token=i.bot)
+
+    bots = await Bots.get_all()
+    for bot_data in bots:
+        not_subscribed = False
+        bot_instance = Bot(token=bot_data.bot)
         try:
-            await bot2.send_chat_action(message.from_user.id, 'typing')
+            await bot_instance.send_chat_action(message.from_user.id, "typing")
         except Exception as e:
-            print(e)
-            not_sub = True
-        sess = await bot2.get_session()
-        await sess.close()
-        if not_sub:
+            logging.error(e)
+            not_subscribed = True
+        await bot_instance.session.close()
+
+        if not_subscribed:
             await check_bots(message)
             return
-    
-    if message.chat.type == "private":
-        chatting = await db.get_user(chat=True, user=message.from_user.id)
-        print(chatting)
-        if chatting is not None:
-            await message.answer("🧐Вы уже находитесь в чате с другим пользователем\n\n💡Для начала стоит прекратить текущий диалог")
-        else:
-            in_queue = await db.get_user(user=message.from_user.id)
-            print(in_queue)
-            if in_queue is None:
-                interlocutor = await db.get_user()
 
-                if interlocutor is None:
-                    await db.insert_queue(user=message.from_user.id)
-                    await message.answer("🔍Начал искать вам подходящего собеседника, подождите... \n\n💡Вы можете закончить поиск написав /stop_search, или нажав кнопку", reply_markup=searching)
-                else:
-                    queues = await db.count_queue()
-                    print(queues)
-                    if queues != 0:
-                        try:
-                            await db.delete_queue(user=message.from_user.id)
-                        except Exception as e:
-                            print(e)
-                        try:
-                            await db.delete_queue(user=interlocutor.user)
-                        except Exception as e:
-                            print(e)
-
-                        await db.insert_chat(user=message.from_user.id, interlocutor=interlocutor.user)
-                        await db.insert_chat(user=interlocutor.user, interlocutor=message.from_user.id)
-
-
-                        chat_info = await db.get_interlocutor(user=message.from_user.id, interlocutor=interlocutor.user)
-
-                        await message.answer(f"Собеседник найден! Вы можете начать общаться.", reply_markup=dating)
-                        await bot.send_message(text=f"Собеседник найден! Вы можете начать общаться.", chat_id=chat_info.interlocutor, reply_markup=dating)
-                    else:
-                        await db.insert_queue(user=message.from_user.id)
-                        await message.answer("🔍Начал искать вам подходящего собеседника, подождите... \n\n💡Вы можете закончить поиск написав /stop_search, или нажав кнопку", reply_markup=searching)
-
+    # Handle searching logic
+    in_chat = await db.get_user(chat=True, user=message.from_user.id)
+    if in_chat:
+        await message.answer(
+            "🧐Вы уже находитесь в чате с другим пользователем\n\n💡Для начала стоит прекратить текущий диалог"
+        )
+    else:
+        in_queue = await db.get_user(user=message.from_user.id)
+        if not in_queue:
+            interlocutor = await db.get_user()
+            if not interlocutor:
+                await db.insert_queue(user=message.from_user.id)
+                await message.answer(
+                    "🔍Начал искать вам подходящего собеседника, подождите...\n\n💡Вы можете закончить поиск написав /stop_search, или нажав кнопку",
+                    reply_markup=searching.as_markup(resize_keyboard=True),
+                )
             else:
-                await message.answer("🧐Вы уже находитесь в поиске\n\n💡Как только появится собеседник – я вас свяжу")
- 
-@dp.message_handler(commands="stop_search")
-@dp.message_handler(text='Остановить поиск')
-async def stop_search_act(message: types.Message):
-    user = await db.get_user(user=message.from_user.id)
-    print(user)
-    if user is not None:
+                await db.delete_queue(user=message.from_user.id)
+                await db.delete_queue(user=interlocutor.user)
+                await db.insert_chat(user=message.from_user.id, interlocutor=interlocutor.user)
+                await db.insert_chat(user=interlocutor.user, interlocutor=message.from_user.id)
+
+                await message.answer("Собеседник найден! Вы можете начать общаться.", reply_markup=dating.as_markup(resize_keyboard=True))
+                await bot.send_message(
+                    interlocutor.user, "Собеседник найден! Вы можете начать общаться.", reply_markup=dating.as_markup(resize_keyboard=True)
+                )
+        else:
+            await message.answer(
+                "🧐Вы уже находитесь в поиске\n\n💡Как только появится собеседник – я вас свяжу"
+            )
+
+
+@dp.message(Command("stop_search"))
+@dp.message(F.text == "Остановить поиск")
+async def stop_search_act(message: Message):
+    user_in_queue = await db.get_user(user=message.from_user.id)
+    if user_in_queue:
         await db.delete_queue(user=message.from_user.id)
         await menu(message)
     else:
         await message.answer("❌Вы еще не начали поиск, чтобы его закончить")
 
-@dp.message_handler(commands="next")
-@dp.message_handler(text='Продолжить поиск')
-async def next(message: types.Message):
-    user = await db.get_user(chat=True, user=message.from_user.id)
-    print(user)
-    if user is not None:
+
+@dp.message(Command("next"))
+@dp.message(F.text == "Продолжить поиск")
+async def next(message: Message):
+    in_chat = await db.get_user(chat=True, user=message.from_user.id)
+    if in_chat:
         await db.delete_chat(user=message.from_user.id)
-        await db.delete_chat(user=user.interlocutor)
-        await bot.send_message(text="😔Пользователь решил покинуть диалог...\n\n💡Продолжим поиск нового собеседника?", chat_id=user.interlocutor, reply_markup=menus)
-        await message.answer("🚶‍♂️Вы покинули диалог\n\n💡Продолжим поиски нового собеседника")
+        await db.delete_chat(user=in_chat.interlocutor)
+        await bot.send_message(
+            in_chat.interlocutor,
+            "😔Пользователь решил покинуть диалог...\n\n💡Продолжим поиск нового собеседника?",
+            reply_markup=menus.as_markup(resize_keyboard=True),
+        )
+        await message.answer(
+            "🚶‍♂️Вы покинули диалог\n\n💡Продолжим поиски нового собеседника"
+        )
         await search_user_act(message)
     else:
         await message.answer("🧐Не обнаружил чат с собеседником")
 
-@dp.message_handler(commands="stop")
-@dp.message_handler(text='Покинуть чат')
-async def leave_from_chat_act(message: types.Message):
-    user = await db.get_user(chat=True, user=message.from_user.id)
-    print(user)
-    if user is not None:
+
+@dp.message(Command("stop"))
+@dp.message(F.text == "Покинуть чат")
+async def leave_from_chat_act(message: Message):
+    in_chat = await db.get_user(chat=True, user=message.from_user.id)
+    if in_chat:
         await db.delete_chat(user=message.from_user.id)
-        await db.delete_chat(user=user.interlocutor)
-        await bot.send_message(text="😔Пользователь решил покинуть диалог...\n\n💡Продолжим поиск нового собеседника?", chat_id=user.interlocutor, reply_markup=menus)
-        await message.answer("🚶‍♂️Вы покинули диалог\n\n💡Продолжим поиски нового собеседника?", reply_markup=menus)
+        await db.delete_chat(user=in_chat.interlocutor)
+        await bot.send_message(
+            in_chat.interlocutor,
+            "😔Пользователь решил покинуть диалог...\n\n💡Продолжим поиск нового собеседника?",
+            reply_markup=menus.as_markup(resize_keyboard=True),
+        )
+        await message.answer(
+            "🚶‍♂️Вы покинули диалог\n\n💡Продолжим поиски нового собеседника?", reply_markup=menus.as_markup(resize_keyboard=True)
+        )
     else:
         await message.answer("🧐Не обнаружил чат с собеседником")
- 
- 
-@dp.message_handler(content_types=["text", "sticker", "photo", "voice", "document"])
-async def some_text(message: types.Message):
-    user = await db.get_user(chat=True, user=message.from_user.id)
-    print(user)
-    if user is None:
+
+# add gifs
+@dp.message() # F.content_type.in_(["text", "sticker", "photo", "voice", "document", "video"])
+async def some_text(message: Message):
+    in_chat = await db.get_user(chat=True, user=message.from_user.id)
+    if not in_chat:
         await message.answer("🧐Не обнаружил чат с собеседником")
         return
-    if message.content_type == "sticker":
-        try:
-            await bot.send_sticker(chat_id=user.interlocutor, sticker=message.sticker["file_id"])
-        except TypeError:
-            pass
-    elif message.content_type == "photo":
-        try:
-            await bot.send_photo(chat_id=user.interlocutor, photo=message.photo[len(message.photo) - 1].file_id)
-        except TypeError:
-            pass
-    elif message.content_type == "voice":
-        try:
-            await bot.send_voice(chat_id=user.interlocutor, voice=message.voice["file_id"])
-        except TypeError:
-            pass
-    elif message.content_type == "document":
-        try:
-            await bot.send_document(chat_id=user.interlocutor, document=message.document["file_id"])
-        except TypeError:
-            pass
-    else:
-        try:
-            await bot.send_message(text=message.text, chat_id=user.interlocutor)
-        except TypeError:
-            pass
+
+    try:
+        await message.copy_to(in_chat.interlocutor)
+        # if message.content_type == "sticker":
+        #     await bot.send_sticker(in_chat.interlocutor, message.sticker.file_id)
+        # elif message.content_type == "photo":
+        #     await bot.send_photo(in_chat.interlocutor, message.photo[-1].file_id)
+        # elif message.content_type == "voice":
+        #     await bot.send_voice(in_chat.interlocutor, message.voice.file_id)
+        # elif message.content_type == "document":
+        #     await bot.send_document(in_chat.interlocutor, message.document.file_id)
+        # elif message.content_type == "video":
+        #     await bot.send_video(in_chat.interlocutor, message.video.file_id)
+        # else:
+        #     await bot.send_message(in_chat.interlocutor, message.text)
+    except Exception as e:
+        logging.error(e)
 
 
-async def init_app():
+# Initialize application
+async def main():
     await async_db_session.init()
     await async_db_session.create_all()
+    await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
-    ioloop = asyncio.get_event_loop()
-    ioloop.create_task(init_app())
-    tasks = [
-        executor.start_polling(dp, skip_updates=True)
-    ]
-    ioloop.run_until_complete(asyncio.wait(tasks))
-    ioloop.close()
+    asyncio.run(main())
