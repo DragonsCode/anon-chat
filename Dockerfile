@@ -1,13 +1,13 @@
 FROM python:3.9
 
-ENV PYTHONUNBUFFERED 1
-
 WORKDIR /app/
+
+COPY . /app/
 
 RUN python -m venv venv
 # Enable venv
 ENV PATH="/venv/bin:$PATH"
 
-RUN pip install aiogram aiosqlite sqlalchemy
+RUN pip install -r requirements.txt
 
-CMD ["python", "chat.py", ]
+CMD ["python", "chat.py"]
